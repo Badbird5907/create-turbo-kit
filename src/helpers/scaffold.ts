@@ -24,6 +24,7 @@ export async function scaffoldProject({ projectName, packageManager }: ScaffoldO
       '--package-manager',
       packageManager,
       '--skip-install',
+      '--no-git',
       projectName
     ]);
     

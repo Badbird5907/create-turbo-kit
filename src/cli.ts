@@ -1,10 +1,10 @@
-import { intro, outro, text, select, isCancel, cancel, confirm } from '@clack/prompts';
+import { intro, outro, text, select, isCancel, cancel, confirm, multiselect } from '@clack/prompts';
 import { Command } from 'commander';
 import color from 'picocolors';
 import fs from 'fs-extra';
 import path from 'path';
-import { replaceScope, setupEnv } from './helpers/transform.js';
-import { installDependencies } from './helpers/install.js';
+import { replaceScope, setupEnv, getDockerContainers, configureDockerCompose, deleteDockerCompose } from './helpers/transform.js';
+import { installDependencies, initializeGit } from './helpers/install.js';
 import { type PackageManager } from './utils/package-manager.js';
 import { scaffoldProject } from './helpers/scaffold.js';
 
@@ -30,6 +30,11 @@ async function main() {
       validate: (value) => {
         if (!value) return 'Please enter a name.';
         if (/[^a-zA-Z0-9-_]/.test(value)) return 'Project name can only contain letters, numbers, dashes and underscores.';
+        const projectDir = path.resolve(process.cwd(), value);
+        if (fs.pathExistsSync(projectDir)) {
+          return 'Project name already taken.';
+        }
+        return undefined;
       },
     });
 
@@ -108,14 +113,65 @@ async function main() {
       packageManager: packageManager as PackageManager,
     });
 
+    const wantsDocker = await confirm({
+      message: 'Do you want to set up a local Docker Compose dev environment?',
+      initialValue: true,
+    });
+
+    if (isCancel(wantsDocker)) {
+      cancel('Operation cancelled.');
+      process.exit(0);
+    }
+
+    if (wantsDocker) {
+      const dockerContainers = getDockerContainers();
+      const containers = await multiselect({
+        message: 'Which containers do you want to include?',
+        options: dockerContainers,
+        initialValues: dockerContainers.map((container) => container.value),
+        required: false,
+      });
+
+      if (isCancel(containers)) {
+        cancel('Operation cancelled.');
+        process.exit(0);
+      }
+
+      if (Array.isArray(containers) && containers.length > 0) {
+        await configureDockerCompose(projectDir, containers as string[]);
+      } else {
+        await deleteDockerCompose(projectDir);
+      }
+    } else {
+      await deleteDockerCompose(projectDir);
+    }
+
+    const shouldInstall = await confirm({
+      message: 'Do you want to install dependencies now?',
+      initialValue: true,
+    });
+
+    if (isCancel(shouldInstall)) {
+      cancel('Operation cancelled.');
+      process.exit(0);
+    }
+
     await replaceScope(projectDir, scope as string);
     await setupEnv(projectDir);
-    await installDependencies(projectDir, packageManager as PackageManager);
+    
+    if (shouldInstall) {
+      await installDependencies(projectDir, packageManager as PackageManager);
+    }
+
+    await initializeGit(projectDir);
 
     outro(color.green('Project initialized successfully!'));
     
     console.log(`To get started:`);
     console.log(color.cyan(`  cd ${projectName}`));
+    if (!shouldInstall) {
+      console.log(color.cyan(`  ${packageManager} install`));
+    }
     console.log(color.cyan(`  ${packageManager} run dev`));
     
     console.log();

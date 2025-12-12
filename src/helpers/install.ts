@@ -21,3 +21,25 @@ export async function installDependencies(projectDir: string, packageManager: Pa
   }
 }
 
+export async function initializeGit(projectDir: string) {
+  const s = spinner();
+  s.start('Initializing git repository...');
+
+  try {
+    await execa('git', ['init'], {
+      cwd: projectDir,
+    });
+    await execa('git', ['add', '.'], {
+      cwd: projectDir,
+    });
+    await execa('git', ['commit', '-m', 'Initial commit'], {
+      cwd: projectDir,
+    });
+
+    s.stop('Initialized git repository');
+  } catch (error) {
+    s.stop('Failed to initialize git repository');
+    throw error;
+  }
+}
+
