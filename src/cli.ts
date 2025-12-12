@@ -172,6 +172,9 @@ async function main() {
     if (!shouldInstall) {
       console.log(color.cyan(`  ${packageManager} install`));
     }
+    if (wantsDocker) {
+      console.log(color.cyan(`  docker compose up -d`));
+    }
     console.log(color.cyan(`  ${packageManager} run dev`));
     
     console.log();
