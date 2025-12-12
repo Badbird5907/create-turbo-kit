@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "",
-  "main": "index.js",
+  "main": "dist/cli.cjs",
   "scripts": {
-    "build": "tsup",
+    "build": "tsup src",
     "dev": "tsx src/cli.ts"
   },
   "keywords": [],

@@ -20,7 +20,7 @@ export async function scaffoldProject({ projectName, packageManager }: ScaffoldO
       ...args,
       'create-turbo@latest',
       '-e',
-      'https://github.com/Badbird5907/turbo-template',
+      'https://github.com/Badbird5907/turbo-kit',
       '--package-manager',
       packageManager,
       '--skip-install',
