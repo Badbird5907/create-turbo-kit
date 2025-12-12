@@ -1,9 +1,12 @@
 {
   "name": "create-turbo-kit",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "description": "",
-  "main": "dist/cli.cjs",
+  "main": "dist/cli.js",
+  "bin": {
+    "create-turbo-kit": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsup src",
     "dev": "tsx src/cli.ts"
