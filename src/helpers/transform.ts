@@ -9,16 +9,25 @@ const DOCKER_CONTAINERS = {
     label: 'PostgreSQL 16 (Database)',
     services: ['postgres'],
     volumes: ['postgres_data'],
+    dependsOn: [], 
+  },
+  pgadmin: {
+    label: `pgAdmin 4.9 (Database management) [Depends on PostgreSQL]`,
+    services: ['pgadmin'],
+    volumes: [],
+    dependsOn: ['postgres'],
   },
   mailpit: {
     label: 'Mailpit (Email testing)',
     services: ['mailpit'],
     volumes: [],
+    dependsOn: [],
   },
   minio: {
     label: 'MinIO (S3-compatible storage)',
     services: ['minio', 'minio-create-bucket'],
     volumes: ['minio_data'],
+    dependsOn: [],
   },
 } as const;
 
@@ -89,12 +98,39 @@ export async function deleteDockerCompose(projectDir: string) {
     const dockerComposePath = path.join(projectDir, 'docker-compose.yml');
     if (await fs.pathExists(dockerComposePath)) {
       await fs.remove(dockerComposePath);
+      s.message(`Removed ${color.cyan(dockerComposePath)}`);
+    }
+    const dockerDir = path.join(projectDir, 'docker');
+    if (await fs.pathExists(dockerDir)) {
+      await fs.remove(dockerDir);
+      s.message(`Removed ${color.cyan(dockerDir)}`);
     }
     s.stop('Removed Docker Compose setup');
   } catch (error) {
     s.stop('Failed to remove Docker Compose setup');
     throw error;
   }
+}
+
+function resolveContainerDependencies(selectedContainers: string[]): string[] {
+  const resolved = new Set<string>(selectedContainers);
+  const queue = [...selectedContainers];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const config = DOCKER_CONTAINERS[current as DockerContainer];
+    
+    if (config && config.dependsOn) {
+      for (const dep of config.dependsOn) {
+        if (!resolved.has(dep)) {
+          resolved.add(dep);
+          queue.push(dep);
+        }
+      }
+    }
+  }
+
+  return Array.from(resolved);
 }
 
 export async function configureDockerCompose(projectDir: string, selectedContainers: string[]) {
@@ -109,10 +145,17 @@ export async function configureDockerCompose(projectDir: string, selectedContain
       return;
     }
 
+    const resolvedContainers = resolveContainerDependencies(selectedContainers);
+    const addedDependencies = resolvedContainers.filter(c => !selectedContainers.includes(c));
+    
+    if (addedDependencies.length > 0) {
+      s.message(`Auto-including dependencies: ${color.cyan(addedDependencies.join(', '))}`);
+    }
+
     let content = await fs.readFile(dockerComposePath, 'utf8');
 
     const allContainers = Object.keys(DOCKER_CONTAINERS) as DockerContainer[];
-    const containersToRemove = allContainers.filter(c => !selectedContainers.includes(c));
+    const containersToRemove = allContainers.filter(c => !resolvedContainers.includes(c));
 
     for (const container of containersToRemove) {
       const containerRegex = new RegExp(
@@ -120,14 +163,28 @@ export async function configureDockerCompose(projectDir: string, selectedContain
         'g'
       );
       content = content.replace(containerRegex, '');
+
+      // delete `./docker/<container>/`
+      const dockerDirPath = path.join(projectDir, 'docker', container);
+      if (await fs.pathExists(dockerDirPath)) {
+        await fs.remove(dockerDirPath);
+        s.message(`Removed ${color.cyan(dockerDirPath)}`);
+      }
     }
 
     content = content.replace(/  # -- \w+ --\n/g, '');
     content = content.replace(/  # \/\/ \w+ \/\/\n/g, '');
 
     await fs.writeFile(dockerComposePath, content);
+
+    // check if `./docker/` is empty
+    const dockerDir = path.join(projectDir, 'docker');
+    if (await fs.pathExists(dockerDir) && (await fs.readdir(dockerDir)).length === 0) {
+      await fs.remove(dockerDir);
+      s.message(`Removed ${color.cyan(dockerDir)} ${color.gray('(because it was empty)')}`);
+    }
     
-    s.stop(`Configured Docker Compose with ${color.cyan(selectedContainers.length)} container(s)`);
+    s.stop(`Configured Docker Compose with ${color.cyan(resolvedContainers.length)} container(s)`);
   } catch (error) {
     s.stop('Failed to configure Docker Compose');
     throw error;
