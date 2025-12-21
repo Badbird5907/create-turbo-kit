@@ -17,6 +17,12 @@ const DOCKER_CONTAINERS = {
     volumes: [],
     dependsOn: ['postgres'],
   },
+  redis: {
+    label: 'Redis (Caching)',
+    services: ['redis'],
+    volumes: [],
+    dependsOn: [],
+  },
   mailpit: {
     label: 'Mailpit (Email testing)',
     services: ['mailpit'],
