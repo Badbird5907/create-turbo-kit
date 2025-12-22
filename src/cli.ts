@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import color from 'picocolors';
 import fs from 'fs-extra';
 import path from 'path';
-import { replaceScope, setupEnv, getDockerContainers, configureDockerCompose, deleteDockerCompose } from './helpers/transform.js';
+import { replaceScope, setupEnv, getDockerContainers, configureDockerCompose, deleteDockerCompose, removeReactEmail } from './helpers/transform.js';
 import { installDependencies, initializeGit } from './helpers/install.js';
 import { type PackageManager } from './utils/package-manager.js';
 import { scaffoldProject } from './helpers/scaffold.js';
@@ -145,7 +145,23 @@ async function main() {
     } else {
       await deleteDockerCompose(projectDir);
     }
+    const wantsReactEmail = await confirm({
+      message: 'Do you want to use react-email?',
+      initialValue: true,
+    });
 
+    if (isCancel(wantsReactEmail)) {
+      cancel('Operation cancelled.');
+      process.exit(0);
+    }
+
+    if (!wantsReactEmail) {
+      await removeReactEmail(projectDir);
+    }
+    
+    await replaceScope(projectDir, scope as string);
+    await setupEnv(projectDir);
+    
     const shouldInstall = await confirm({
       message: 'Do you want to install dependencies now?',
       initialValue: true,
@@ -156,9 +172,6 @@ async function main() {
       process.exit(0);
     }
 
-    await replaceScope(projectDir, scope as string);
-    await setupEnv(projectDir);
-    
     if (shouldInstall) {
       await installDependencies(projectDir, packageManager as PackageManager);
     }

@@ -197,3 +197,52 @@ export async function configureDockerCompose(projectDir: string, selectedContain
   }
 }
 
+export async function removePackages(
+  packages: string[],
+  packagePath: string,
+  projectDir: string,
+  s?: ReturnType<typeof spinner>
+) {
+  const packageJsonPath = path.join(projectDir, packagePath, 'package.json');
+  if (await fs.pathExists(packageJsonPath)) {
+    const packageJson = await fs.readJson(packageJsonPath);
+    let hasChanges = false;
+
+    for (const dep of packages) {
+      if (packageJson.dependencies && packageJson.dependencies[dep]) {
+        delete packageJson.dependencies[dep];
+        hasChanges = true;
+        if (s) {
+          s.message(`Removed ${color.cyan(dep)} from ${packagePath}/package.json`);
+        }
+      }
+    }
+
+    if (hasChanges) {
+      await fs.writeJson(packageJsonPath, packageJson, { spaces: 2 });
+    }
+  }
+}
+
+export async function removeReactEmail(projectDir: string) {
+  const s = spinner();
+  s.start('Removing react-email...');
+
+  try {
+    // remove email package
+    const emailPackagePath = path.join(projectDir, 'packages', 'email');
+    if (await fs.pathExists(emailPackagePath)) {
+      await fs.remove(emailPackagePath);
+      s.message(`Removed ${color.cyan(emailPackagePath)}`);
+    }
+
+    // remove @react-email/components from packages/api/package.json
+    await removePackages(['@react-email/components', '@acme/email'], 'packages/api', projectDir, s);
+
+    s.stop('Removed react-email');
+  } catch (error) {
+    s.stop('Failed to remove react-email');
+    throw error;
+  }
+}
+

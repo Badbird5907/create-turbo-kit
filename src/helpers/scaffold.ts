@@ -2,6 +2,8 @@ import { execa } from 'execa';
 import { spinner } from '@clack/prompts';
 import { type PackageManager, getRunner } from '../utils/package-manager.js';
 import color from 'picocolors';
+import path from 'path';
+import fs from 'fs-extra';
 
 export interface ScaffoldOptions {
   projectName: string;
@@ -27,7 +29,11 @@ export async function scaffoldProject({ projectName, packageManager }: ScaffoldO
       '--no-git',
       projectName
     ]);
-    
+  
+
+    await fs.remove(path.join(projectName, 'pnpm-lock.yaml'));
+    // we are removing the lockfile as we may be deleting some packages
+
     s.stop(`Scaffolded project in ${color.cyan(projectName)}`);
   } catch (error) {
     s.stop(`Failed to scaffold project`);
