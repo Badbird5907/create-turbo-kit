@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { intro, outro, text, select, isCancel, cancel, confirm, multiselect } from '@clack/prompts';
 import { Command } from 'commander';
 import color from 'picocolors';
