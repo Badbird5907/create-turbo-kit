@@ -29,3 +29,6 @@ To run the script (manually):
 ```bash
 node <path-to-cli>/dist/cli.js
 ```
+
+## Package manager support
+Currently turbo-kit works with only pnpm. There is an issue with the template repo that breaks the conversion to other package managers that is typically handled by create-turbo.
