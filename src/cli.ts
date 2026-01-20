@@ -65,9 +65,9 @@ async function main() {
     message: 'Which package manager do you want to use?',
     options: [
       { value: 'pnpm', label: 'pnpm' },
-      { value: 'npm', label: 'npm' },
-      { value: 'yarn', label: 'yarn' },
-      { value: 'bun', label: 'bun' },
+      // { value: 'npm', label: 'npm' },
+      // { value: 'yarn', label: 'yarn' },
+      // { value: 'bun', label: 'bun' },
     ],
   });
 
