@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import color from 'picocolors';
 import fs from 'fs-extra';
 import path from 'path';
-import { replaceScope, setupEnv, getDockerContainers, configureDockerCompose, deleteDockerCompose, removeReactEmail } from './helpers/transform.js';
+import { replaceScope, setupEnv, getDockerContainers, configureDockerCompose, deleteDockerCompose, removeReactEmail, resolveCatalogVersions } from './helpers/transform.js';
 import { installDependencies, initializeGit } from './helpers/install.js';
 import { type PackageManager } from './utils/package-manager.js';
 import { scaffoldProject } from './helpers/scaffold.js';
@@ -112,6 +112,11 @@ async function main() {
       projectName,
       packageManager: packageManager as PackageManager,
     });
+
+    // Resolve pnpm catalog versions for non-pnpm package managers
+    if (packageManager !== 'pnpm') {
+      await resolveCatalogVersions(projectDir, packageManager as PackageManager);
+    }
 
     const wantsDocker = await confirm({
       message: 'Do you want to set up a local Docker Compose dev environment?',

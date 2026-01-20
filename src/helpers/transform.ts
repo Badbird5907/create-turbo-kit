@@ -3,6 +3,8 @@ import fs from 'fs-extra';
 import path from 'path';
 import { spinner } from '@clack/prompts';
 import color from 'picocolors';
+import YAML from 'yaml';
+import type { PackageManager } from '../utils/package-manager.js';
 
 const DOCKER_CONTAINERS = {
   postgres: {
@@ -242,6 +244,192 @@ export async function removeReactEmail(projectDir: string) {
     s.stop('Removed react-email');
   } catch (error) {
     s.stop('Failed to remove react-email');
+    throw error;
+  }
+}
+
+interface PnpmWorkspace {
+  packages?: string[];
+  catalog?: Record<string, string>;
+  catalogs?: Record<string, Record<string, string>>;
+  overrides?: Record<string, string>;
+}
+
+interface PackageJson {
+  name?: string;
+  packageManager?: string;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  pnpm?: {
+    overrides?: Record<string, string>;
+    [key: string]: unknown;
+  };
+  overrides?: Record<string, string>;
+  resolutions?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+/**
+ * Resolves a version string that may contain catalog: or workspace: protocols
+ */
+function resolveVersion(
+  packageName: string,
+  version: string,
+  defaultCatalog: Record<string, string>,
+  namedCatalogs: Record<string, Record<string, string>>
+): string {
+  // Handle catalog: (default catalog)
+  if (version === 'catalog:') {
+    const resolved = defaultCatalog[packageName];
+    if (resolved) {
+      return resolved;
+    }
+    // If not found in catalog, keep original (will likely fail at install)
+    return version;
+  }
+
+  // Handle catalog:catalogName (named catalog)
+  if (version.startsWith('catalog:')) {
+    const catalogName = version.slice('catalog:'.length);
+    const catalog = namedCatalogs[catalogName];
+    if (catalog && catalog[packageName]) {
+      return catalog[packageName];
+    }
+    // If not found in named catalog, keep original
+    return version;
+  }
+
+  // Handle workspace:* or workspace:^ etc.
+  if (version.startsWith('workspace:')) {
+    return '*';
+  }
+
+  return version;
+}
+
+/**
+ * Resolves catalog versions in an overrides/resolutions object
+ */
+function resolveOverrides(
+  overrides: Record<string, string>,
+  defaultCatalog: Record<string, string>,
+  namedCatalogs: Record<string, Record<string, string>>
+): Record<string, string> {
+  const resolved: Record<string, string> = {};
+  
+  for (const [pkg, version] of Object.entries(overrides)) {
+    resolved[pkg] = resolveVersion(pkg, version, defaultCatalog, namedCatalogs);
+  }
+  
+  return resolved;
+}
+
+/**
+ * Resolves pnpm catalog versions in all package.json files when using a non-pnpm package manager.
+ * 
+ * This transform:
+ * 1. Parses pnpm-workspace.yaml to extract catalog version mappings
+ * 2. Replaces catalog: and catalog:name versions with actual versions in all package.json files
+ * 3. Replaces workspace:* references with *
+ * 4. Converts pnpm.overrides to overrides (npm/bun) or resolutions (yarn)
+ * 5. Removes the packageManager field from root package.json
+ * 6. Deletes pnpm-workspace.yaml
+ */
+export async function resolveCatalogVersions(
+  projectDir: string,
+  packageManager: PackageManager
+) {
+  const s = spinner();
+  s.start('Resolving pnpm catalog versions...');
+
+  try {
+    // 1. Parse pnpm-workspace.yaml
+    const workspaceYamlPath = path.join(projectDir, 'pnpm-workspace.yaml');
+    
+    if (!(await fs.pathExists(workspaceYamlPath))) {
+      s.stop('No pnpm-workspace.yaml found, skipping catalog resolution');
+      return;
+    }
+
+    const workspaceContent = await fs.readFile(workspaceYamlPath, 'utf8');
+    const workspace: PnpmWorkspace = YAML.parse(workspaceContent);
+
+    const defaultCatalog = workspace.catalog ?? {};
+    const namedCatalogs = workspace.catalogs ?? {};
+
+    // 2. Find all package.json files
+    const packageJsonFiles = await fg('**/package.json', {
+      cwd: projectDir,
+      ignore: ['**/node_modules/**'],
+      absolute: true,
+    });
+
+    let totalResolved = 0;
+
+    // 3. Process each package.json
+    for (const filePath of packageJsonFiles) {
+      const pkg: PackageJson = await fs.readJson(filePath);
+      let modified = false;
+      const relativePath = path.relative(projectDir, filePath);
+
+      // Process all dependency types
+      const depTypes = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const;
+      
+      for (const depType of depTypes) {
+        const deps = pkg[depType];
+        if (deps) {
+          for (const [name, version] of Object.entries(deps)) {
+            const resolved = resolveVersion(name, version, defaultCatalog, namedCatalogs);
+            if (resolved !== version) {
+              deps[name] = resolved;
+              modified = true;
+              totalResolved++;
+            }
+          }
+        }
+      }
+
+      // 4. Handle pnpm.overrides
+      if (pkg.pnpm?.overrides) {
+        const resolvedOverrides = resolveOverrides(
+          pkg.pnpm.overrides,
+          defaultCatalog,
+          namedCatalogs
+        );
+
+        if (packageManager === 'yarn') {
+          // Yarn uses 'resolutions'
+          pkg.resolutions = { ...(pkg.resolutions ?? {}), ...resolvedOverrides };
+        } else {
+          // npm and bun use 'overrides'
+          pkg.overrides = { ...(pkg.overrides ?? {}), ...resolvedOverrides };
+        }
+
+        // Remove pnpm-specific field
+        delete pkg.pnpm;
+        modified = true;
+        s.message(`Converted pnpm.overrides in ${color.cyan(relativePath)}`);
+      }
+
+      // 5. Remove packageManager field from root package.json
+      if (relativePath === 'package.json' && pkg.packageManager) {
+        delete pkg.packageManager;
+        modified = true;
+      }
+
+      if (modified) {
+        await fs.writeJson(filePath, pkg, { spaces: 2 });
+      }
+    }
+
+    // 6. Delete pnpm-workspace.yaml
+    await fs.remove(workspaceYamlPath);
+
+    s.stop(`Resolved ${color.cyan(totalResolved.toString())} catalog versions`);
+  } catch (error) {
+    s.stop('Failed to resolve catalog versions');
     throw error;
   }
 }
