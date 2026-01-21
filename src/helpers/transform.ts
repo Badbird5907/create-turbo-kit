@@ -41,6 +41,26 @@ const DOCKER_CONTAINERS = {
 
 export type DockerContainer = keyof typeof DOCKER_CONTAINERS;
 
+/**
+ * Sort dependencies alphabetically in a package.json object
+ */
+function sortPackageJsonDependencies(pkg: PackageJson): void {
+  const depTypes = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const;
+  
+  for (const depType of depTypes) {
+    const deps = pkg[depType];
+    if (deps && typeof deps === 'object') {
+      const sorted = Object.keys(deps)
+        .sort()
+        .reduce((acc, key) => {
+          acc[key] = deps[key]!;
+          return acc;
+        }, {} as Record<string, string>);
+      pkg[depType] = sorted;
+    }
+  }
+}
+
 export async function replaceScope(projectDir: string, newScope: string) {
   const s = spinner();
   s.start(`Replacing scope with ${color.cyan(newScope)}...`);
@@ -75,7 +95,27 @@ export async function replaceScope(projectDir: string, newScope: string) {
       })
     );
     
-    s.stop(`Replaced scope with ${color.cyan(newScope)}`);
+    // Sort dependencies in all package.json files after replacing scope
+    s.message('Sorting dependencies alphabetically...');
+    const packageJsonFiles = await fg('**/package.json', {
+      cwd: projectDir,
+      ignore: ['**/node_modules/**'],
+      absolute: true,
+    });
+
+    await Promise.all(
+      packageJsonFiles.map(async (file) => {
+        try {
+          const pkg: PackageJson = await fs.readJson(file);
+          sortPackageJsonDependencies(pkg);
+          await fs.writeJson(file, pkg, { spaces: 2 });
+        } catch (e) {
+          // Ignore errors for malformed package.json files
+        }
+      })
+    );
+    
+    s.stop(`Replaced scope with ${color.cyan(newScope)} and sorted dependencies`);
   } catch (error) {
     s.stop('Failed to replace scope');
     throw error;
