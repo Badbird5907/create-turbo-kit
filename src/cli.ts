@@ -193,8 +193,10 @@ async function main() {
     if (wantsDocker) {
       console.log(color.cyan(`  docker compose up -d`));
     }
+    console.log(color.cyan(`  ${packageManager} run db:generate`));
+    console.log(color.cyan(`  ${packageManager} run db:migrate`));
+    console.log();
     console.log(color.cyan(`  ${packageManager} run dev`));
-    
     console.log();
     console.log(color.greenBright("Happy Hacking!"))
   } catch (error) {
